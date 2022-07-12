@@ -54,6 +54,8 @@ jobs:
           sudo iptables -I FORWARD -o $DEFAULT_ROUTE_DEVICE -j ACCEPT
           sudo iptables -I FORWARD -i $DEFAULT_ROUTE_DEVICE -j ACCEPT
 
+          # ARM64 tests run inside an LXD container instead of an LXD Virtual machine
+          # There are some limitations in terms of what we can customize.
           if [ "${{ matrix.arch }}" == "amd64" ];then
             # Enable IP forward
             echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/ip_forward.conf
@@ -63,13 +65,13 @@ jobs:
 
             sudo sysctl --system
             sysctl -p
-          fi
 
-          # Enable extra SWAP
-          sudo fallocate /swap.img -l 8GiB
-          sudo chmod 600 /swap.img
-          sudo mkswap /swap.img
-          sudo swapon /swap.img
+            # Enable extra SWAP
+            sudo fallocate /swap.img -l 8GiB
+            sudo chmod 600 /swap.img
+            sudo mkswap /swap.img
+            sudo swapon /swap.img
+          fi
 
       - uses: actions/checkout@v3
         with:
@@ -101,24 +103,33 @@ jobs:
 
           # extract the image.
           IMG_ARCHIVE=$(readlink -f images/**/flatcar_production_image.bin.bz2)
+          QEMU_UEFI_BIOS_FILE=$(readlink -f images/**/flatcar_production_qemu_uefi_efi_code.fd)
           bzip2 --decompress ${IMG_ARCHIVE}
 
           cp ${IMG_ARCHIVE%%.bz2} ./scripts/
+          cp ${QEMU_UEFI_BIOS_FILE} ./scripts/
 
           pushd scripts
           source ci-automation/test.sh
 
+          PARALLEL_ARCH=2
+          if [ "${{ matrix.arch }}" == "arm64" ];then
+            # ARM64 servers have more memory and CPUs
+            PARALLEL_ARCH=10
+          fi
+
           cat > sdk_container/.env <<EOF
           # export the QEMU_IMAGE_NAME to avoid to download it.
           export QEMU_IMAGE_NAME="/work/flatcar_production_image.bin"
-          export PARALLEL_TESTS=2
+          export QEMU_UEFI_BIOS="/work/flatcar_production_qemu_uefi_efi_code.fd"
+          export PARALLEL_TESTS=${PARALLEL_ARCH}
           EOF
 
           export MAX_RETRIES=2
           export SKIP_COPY_TO_BINCACHE=1
 
           # run the test.
-          test_run ${{ matrix.arch }} qemu
+          test_run ${{ matrix.arch }} qemu_uefi --qemu-skip-mangle
 
       - name: Upload artifacts
         if: always()
