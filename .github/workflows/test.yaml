@@ -30,5 +30,6 @@ jobs:
           uname -a
           df -h
           whoami
+          env
           sleep ${{ github.event.inputs.sleep_time }}
 
