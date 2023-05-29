@@ -38,21 +38,22 @@ jobs:
           echo "Current members of the maintainers team:"
           cat maintainers.txt
 
-          res=false
           echo "Checking for membership of '${{ env.requester }}'"
-          if grep -qE "^${{ env.requester }}$" maintainers.txt ; then
+          res=0
+          grep -qE "^${{ env.requester }}$" maintainers.txt || res=$?
+
+          if [ $res -eq 0 ]; then
             echo "Succeeded."
-            res=true
           else
             echo "FAILED: '${{ env.requester }} is not a member of the Flatcar maintainers team."
           fi
 
-          $res
+          exit $res
 
   update_sdk:
     needs: check_maintainer_membership
-    if: ( always() && needs.check_maintainer_membership.result == 'success'
-                   && contains(github.event.comment.body, '/update-sdk') )
+    if: ( needs.check_maintainer_membership.result == 'success'
+          && (contains(github.event.comment.body, '/update-sdk') || contains(github.event.comment.body, '/build-image')) )
     name: "Build an updated SDK container"
     # SDK build needs access to bincache ssh secret
     secrets: inherit
@@ -60,8 +61,8 @@ jobs:
 
   build_image:
     needs: [ check_maintainer_membership, update_sdk ]
-    if: ( always() && needs.check_maintainer_membership.result == 'success'
-                   && (    contains(github.event.comment.body, '/build-image') || needs.update_sdk.result == 'success' ) )
+    if: ( needs.check_maintainer_membership.result == 'success'
+          && (    contains(github.event.comment.body, '/build-image') || needs.update_sdk.result == 'success' ) )
     name: "Build the OS image"
     uses: ./.github/workflows/ci.yaml
     with:
